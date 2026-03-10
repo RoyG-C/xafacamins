@@ -144,8 +144,18 @@ def asegurar_columna_fecha(fecha: str) -> bool:
     if fecha in cols:
         return False
 
+    # When we add a new attendance date column, default all existing
+    # members to "N" (not present) so that blanks don’t linger.
+    # Use a DEFAULT clause and also explicitly update any NULL values
+    # to cover cases where ALTER TABLE might not apply the default to
+    # existing rows depending on PostgreSQL version.
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(f"ALTER TABLE public.socios ADD COLUMN {_quote_ident(fecha)} TEXT")
+        cur.execute(
+            f"ALTER TABLE public.socios ADD COLUMN {_quote_ident(fecha)} TEXT DEFAULT 'N'"
+        )
+        cur.execute(
+            f"UPDATE public.socios SET {_quote_ident(fecha)} = 'N' WHERE {_quote_ident(fecha)} IS NULL"
+        )
 
     return True
 
@@ -181,9 +191,16 @@ def migrar_asistencias_antiguas() -> None:
 
         fechas = sorted({str(f[1]) for f in filas if _es_columna_fecha(str(f[1]))})
         actuales = set(columnas_socios())
+        # add any missing date columns with default 'N' so existing socios are
+        # marked absent by default
         for fecha in fechas:
             if fecha not in actuales:
-                cur.execute(f"ALTER TABLE public.socios ADD COLUMN {_quote_ident(fecha)} TEXT")
+                cur.execute(
+                    f"ALTER TABLE public.socios ADD COLUMN {_quote_ident(fecha)} TEXT DEFAULT 'N'"
+                )
+                cur.execute(
+                    f"UPDATE public.socios SET {_quote_ident(fecha)} = 'N' WHERE {_quote_ident(fecha)} IS NULL"
+                )
 
         for num, fecha, estado in filas:
             estado_norm = _normalizar_estado(estado)
