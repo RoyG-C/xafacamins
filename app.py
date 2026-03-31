@@ -291,15 +291,30 @@ def guardar_asistencia_db(presentes: set[int], quitar_presentes: set[int], fecha
     return sobrescribe
 
 
-def construir_excel_asistencias() -> pd.DataFrame:
-    fecha_cols = columnas_fecha_socios()
-    select_cols = ["num", "nom_cognoms", *fecha_cols]
-    select_sql = ", ".join(_quote_ident(c) for c in select_cols)
-
-    df = _query_df(f"SELECT {select_sql} FROM public.socios ORDER BY num")
+def construir_excel_asistencia_dia(fecha: str) -> pd.DataFrame:
+    if existe_fecha(fecha):
+        df = _query_df(
+            f"SELECT num, nom_cognoms, {_quote_ident(fecha)} AS {_quote_ident(fecha)} FROM public.socios ORDER BY num"
+        )
+    else:
+        df = _query_df(
+            f"SELECT num, nom_cognoms, NULL::TEXT AS {_quote_ident(fecha)} FROM public.socios ORDER BY num"
+        )
 
     rename_map = {"num": "NÚM", "nom_cognoms": "NOM I COGNOMS"}
     return df.rename(columns=rename_map)
+
+
+def limpiar_historico_asistencias() -> int:
+    fechas = columnas_fecha_socios()
+    if not fechas:
+        return 0
+
+    with get_conn() as conn, conn.cursor() as cur:
+        for fecha in fechas:
+            cur.execute(f"ALTER TABLE public.socios DROP COLUMN IF EXISTS {_quote_ident(fecha)}")
+
+    return len(fechas)
 
 
 def dataframe_a_excel_bytes(df: pd.DataFrame) -> bytes:
@@ -460,17 +475,37 @@ def main() -> None:
 
     with cexport:
         try:
-            df_export = construir_excel_asistencias()
+            df_export = construir_excel_asistencia_dia(fecha_columna)
             excel_bytes = dataframe_a_excel_bytes(df_export)
             st.download_button(
-                "Descarregar assistències Excel",
+                "Descarregar assistència del dia (Excel)",
                 data=excel_bytes,
-                file_name=f"assistencies_{date.today().isoformat()}.xlsx",
+                file_name=f"assistencia_{fecha_columna}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
         except Exception as e:
             st.error(f"No s'ha pogut preparar l'Excel d'exportació: {e}")
+
+    st.divider()
+    st.subheader("Administració")
+    st.warning("Aquesta acció elimina tot l'històric d'assistències (totes les dates) i no es pot desfer.")
+    confirmar_limpieza = st.checkbox("Confirmo que vull eliminar tot l'històric", value=False)
+    if st.button("Eliminar històric complet", type="secondary"):
+        if not confirmar_limpieza:
+            st.error("Marca la confirmació abans d'eliminar l'històric.")
+        else:
+            try:
+                total = limpiar_historico_asistencias()
+                st.session_state.presentes = set()
+                st.session_state.quitar_presentes = set()
+                if total == 0:
+                    st.info("No hi havia cap columna d'històric per eliminar.")
+                else:
+                    st.success(f"S'han eliminat {total} columnes d'històric.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"No s'ha pogut eliminar l'històric: {e}")
 
 
 if __name__ == "__main__":
