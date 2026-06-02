@@ -394,24 +394,26 @@ def main() -> None:
     c1, c2 = st.columns(2)
 
     with c1:
-        with st.form("form_anadir", clear_on_submit=True):
-            numero_input_add = st.number_input(
-                "NÚM per Afegir",
-                min_value=1,
-                step=1,
-                format="%d",
-                key="num_add",
-            )
-            enviar_add = st.form_submit_button("Afegir")
+        numero_input_add = st.number_input(
+            "NÚM per Afegir",
+            min_value=1,
+            step=1,
+            format="%d",
+            key="num_add",
+        )
+        numero_add = int(numero_input_add)
+        nom_add = nombre_por_id.get(numero_add)
 
-        if enviar_add:
-            numero = int(numero_input_add)
-            if numero not in socios_ids:
-                st.warning(f"El soci {numero} no existeix a la base de dades.")
-            else:
-                st.session_state.presentes.add(numero)
-                st.session_state.quitar_presentes.discard(numero)
-                st.success(f"Soci {numero} marcat per afegir.")
+        if numero_add in socios_ids:
+            st.info(f"**{numero_add} - {nom_add}**")
+            confirmar_add = st.button("Afegir a pendents", key="btn_confirm_add")
+            if confirmar_add:
+                st.session_state.presentes.add(numero_add)
+                st.session_state.quitar_presentes.discard(numero_add)
+                st.success(f"Soci {numero_add} marcat per afegir.")
+                st.rerun()
+        else:
+            st.warning(f"El soci {numero_add} no existeix a la base de dades.")
 
     with c2:
         with st.form("form_quitar", clear_on_submit=True):
