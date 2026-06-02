@@ -500,26 +500,6 @@ def main() -> None:
             st.error(f"No s'ha pogut preparar l'Excel d'exportació: {e}")
 
     st.divider()
-    st.subheader("Administració")
-    st.warning("Aquesta acció elimina tot l'històric d'assistències (totes les dates) i no es pot desfer.")
-    confirmar_limpieza = st.checkbox("Confirmo que vull eliminar tot l'històric", value=False)
-    if st.button("Eliminar històric complet", type="secondary"):
-        if not confirmar_limpieza:
-            st.error("Marca la confirmació abans d'eliminar l'històric.")
-        else:
-            try:
-                total = limpiar_historico_asistencias()
-                st.session_state.presentes = set()
-                st.session_state.quitar_presentes = set()
-                if total == 0:
-                    st.info("No hi havia cap columna d'històric per eliminar.")
-                else:
-                    st.success(f"S'han eliminat {total} columnes d'històric.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"No s'ha pogut eliminar l'històric: {e}")
-
-    st.divider()
     st.subheader("Alta de nou soci")
     try:
         siguiente_num = proximo_num_socio()
@@ -538,6 +518,26 @@ def main() -> None:
             st.rerun()
         except Exception as e:
             st.error(f"No s'ha pogut donar d'alta el soci: {e}")
+
+    st.divider()
+    st.subheader("Administració")
+    st.warning("Aquesta acció elimina tot l'històric d'assistències (totes les dates) i no es pot desfer.")
+    confirmar_limpieza = st.checkbox("Confirmo que vull eliminar tot l'històric", value=False)
+    if st.button("Eliminar històric complet", type="secondary"):
+        if not confirmar_limpieza:
+            st.error("Marca la confirmació abans d'eliminar l'històric.")
+        else:
+            try:
+                total = limpiar_historico_asistencias()
+                st.session_state.presentes = set()
+                st.session_state.quitar_presentes = set()
+                if total == 0:
+                    st.info("No hi havia cap columna d'històric per eliminar.")
+                else:
+                    st.success(f"S'han eliminat {total} columnes d'històric.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"No s'ha pogut eliminar l'històric: {e}")
 
 
 if __name__ == "__main__":
