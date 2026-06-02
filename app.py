@@ -370,25 +370,6 @@ def main() -> None:
             f"La columna {fecha_columna} ja existeix: s'actualitzaran només els socis que modifiquis en aquesta sessió."
         )
 
-    st.subheader("Alta de nou soci")
-    try:
-        siguiente_num = proximo_num_socio()
-        st.caption(f"El següent número disponible és el {siguiente_num}.")
-    except Exception as e:
-        st.warning(f"No s'ha pogut calcular el següent número: {e}")
-
-    with st.form("form_alta_socio", clear_on_submit=True):
-        nom_nou = st.text_input("Nom i cognoms", placeholder="Ex. Joan Pérez")
-        alta_enviada = st.form_submit_button("Donar d'alta")
-
-    if alta_enviada:
-        try:
-            nuevo_num = crear_socio(nom_nou)
-            st.success(f"Soci donat d'alta amb el número {nuevo_num}.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"No s'ha pogut donar d'alta el soci: {e}")
-
     st.subheader("Passar llista per número de soci")
 
     c1, c2 = st.columns(2)
@@ -537,6 +518,26 @@ def main() -> None:
                 st.rerun()
             except Exception as e:
                 st.error(f"No s'ha pogut eliminar l'històric: {e}")
+
+    st.divider()
+    st.subheader("Alta de nou soci")
+    try:
+        siguiente_num = proximo_num_socio()
+        st.caption(f"El següent número disponible és el {siguiente_num}.")
+    except Exception as e:
+        st.warning(f"No s'ha pogut calcular el següent número: {e}")
+
+    with st.form("form_alta_socio", clear_on_submit=True):
+        nom_nou = st.text_input("Nom i cognoms", placeholder="Ex. Joan Pérez")
+        alta_enviada = st.form_submit_button("Donar d'alta")
+
+    if alta_enviada:
+        try:
+            nuevo_num = crear_socio(nom_nou)
+            st.success(f"Soci donat d'alta amb el número {nuevo_num}.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"No s'ha pogut donar d'alta el soci: {e}")
 
 
 if __name__ == "__main__":
