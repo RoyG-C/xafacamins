@@ -251,6 +251,33 @@ def cargar_socios_base() -> pd.DataFrame:
     return df
 
 
+def proximo_num_socio() -> int:
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT COALESCE(MAX(num), 0) + 1 FROM public.socios")
+        return int(cur.fetchone()[0])
+
+
+def crear_socio(nom_cognoms: str) -> int:
+    nombre = nom_cognoms.strip()
+    if not nombre:
+        raise ValueError("El nom i cognoms no pot estar buit.")
+
+    with get_conn() as conn, conn.cursor() as cur:
+        # Bloquegem la taula per evitar col·lisions si dos altes arriben alhora.
+        cur.execute("LOCK TABLE public.socios IN EXCLUSIVE MODE")
+        cur.execute("SELECT COALESCE(MAX(num), 0) + 1 FROM public.socios")
+        nuevo_num = int(cur.fetchone()[0])
+        cur.execute(
+            """
+            INSERT INTO public.socios (num, nom_cognoms)
+            VALUES (%s, %s)
+            """,
+            (nuevo_num, nombre),
+        )
+
+    return nuevo_num
+
+
 def existe_fecha(fecha: str) -> bool:
     return fecha in columnas_socios()
 
@@ -325,15 +352,15 @@ def main() -> None:
         st.error(f"Error inicialitzant la base de dades: {e}")
         st.stop()
 
-    if df_socios.empty:
-        st.error("No hi ha socis carregats. Posa un `socis.xlsx` inicial al repo o carrega socis directament a la taula `socios`.")
-        st.stop()
-
-    socios_ids = set(df_socios["NÚM"].tolist())
-    nombre_por_id = {
-        int(row["NÚM"]): str(row["NOM I COGNOMS"]) if pd.notna(row["NOM I COGNOMS"]) else ""
-        for _, row in df_socios[["NÚM", "NOM I COGNOMS"]].iterrows()
-    }
+    socios_ids = set(df_socios["NÚM"].tolist()) if not df_socios.empty else set()
+    nombre_por_id = (
+        {
+            int(row["NÚM"]): str(row["NOM I COGNOMS"]) if pd.notna(row["NOM I COGNOMS"]) else ""
+            for _, row in df_socios[["NÚM", "NOM I COGNOMS"]].iterrows()
+        }
+        if not df_socios.empty
+        else {}
+    )
 
     fecha_entreno = st.date_input("Data de l'entrenament", value=date.today(), format="YYYY-MM-DD")
     fecha_columna = fecha_entreno.strftime("%Y-%m-%d")
@@ -342,6 +369,25 @@ def main() -> None:
         st.warning(
             f"La columna {fecha_columna} ja existeix: s'actualitzaran només els socis que modifiquis en aquesta sessió."
         )
+
+    st.subheader("Alta de nou soci")
+    try:
+        siguiente_num = proximo_num_socio()
+        st.caption(f"El següent número disponible és el {siguiente_num}.")
+    except Exception as e:
+        st.warning(f"No s'ha pogut calcular el següent número: {e}")
+
+    with st.form("form_alta_socio", clear_on_submit=True):
+        nom_nou = st.text_input("Nom i cognoms", placeholder="Ex. Joan Pérez")
+        alta_enviada = st.form_submit_button("Donar d'alta")
+
+    if alta_enviada:
+        try:
+            nuevo_num = crear_socio(nom_nou)
+            st.success(f"Soci donat d'alta amb el número {nuevo_num}.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"No s'ha pogut donar d'alta el soci: {e}")
 
     st.subheader("Passar llista per número de soci")
 
