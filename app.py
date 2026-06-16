@@ -368,6 +368,12 @@ def main() -> None:
         st.session_state.quitar_presentes = set()
     if "excel_export" not in st.session_state:
         st.session_state.excel_export = None
+    if "mensaje_add" not in st.session_state:
+        st.session_state.mensaje_add = None
+    if "num_add" not in st.session_state:
+        st.session_state.num_add = ""
+    elif not isinstance(st.session_state.num_add, str):
+        st.session_state.num_add = str(st.session_state.num_add)
 
     try:
         inicializar_db()
@@ -398,27 +404,50 @@ def main() -> None:
 
     c1, c2 = st.columns(2)
 
-    with c1:
-        numero_input_add = st.number_input(
-            "NÚM per Afegir",
-            min_value=1,
-            step=1,
-            format="%d",
-            key="num_add",
-        )
-        numero_add = int(numero_input_add)
-        nom_add = nombre_por_id.get(numero_add)
+    def _numero_add_actual() -> int | None:
+        valor = str(st.session_state.get("num_add", "")).strip()
+        if not valor:
+            return None
+        try:
+            numero = int(valor)
+        except ValueError:
+            return None
+        return numero if numero > 0 else None
 
-        if numero_add in socios_ids:
+    def _afegir_soci_actual() -> None:
+        numero = _numero_add_actual()
+        if numero is None:
+            st.session_state.mensaje_add = ("warning", "Introdueix un número de soci vàlid.")
+            return
+        if numero not in socios_ids:
+            st.session_state.mensaje_add = ("warning", f"El soci {numero} no existeix a la base de dades.")
+            return
+
+        st.session_state.presentes.add(numero)
+        st.session_state.quitar_presentes.discard(numero)
+        st.session_state.mensaje_add = ("success", f"Soci {numero} afegit a l'assistència del dia.")
+
+    with c1:
+        st.text_input(
+            "NÚM per Afegir",
+            key="num_add",
+            on_change=_afegir_soci_actual,
+        )
+        numero_add = _numero_add_actual()
+
+        if numero_add is not None and numero_add in socios_ids:
+            nom_add = nombre_por_id.get(numero_add, "")
             st.info(f"**{numero_add} - {nom_add}**")
-            confirmar_add = st.button("Afegir a assistència del dia", key="btn_confirm_add")
-            if confirmar_add:
-                st.session_state.presentes.add(numero_add)
-                st.session_state.quitar_presentes.discard(numero_add)
-                st.success(f"Soci {numero_add} marcat per afegir.")
-                st.rerun()
-        else:
+        elif numero_add is not None:
             st.warning(f"El soci {numero_add} no existeix a la base de dades.")
+
+        st.button("Afegir a assistència del dia", key="btn_confirm_add", on_click=_afegir_soci_actual)
+        if st.session_state.mensaje_add:
+            tipo_mensaje, texto_mensaje = st.session_state.mensaje_add
+            if tipo_mensaje == "success":
+                st.success(texto_mensaje)
+            else:
+                st.warning(texto_mensaje)
 
     with c2:
         with st.form("form_quitar", clear_on_submit=True):
