@@ -371,9 +371,7 @@ def main() -> None:
     if "mensaje_add" not in st.session_state:
         st.session_state.mensaje_add = None
     if "num_add" not in st.session_state:
-        st.session_state.num_add = ""
-    elif not isinstance(st.session_state.num_add, str):
-        st.session_state.num_add = str(st.session_state.num_add)
+        st.session_state.num_add = None
 
     try:
         inicializar_db()
@@ -391,6 +389,8 @@ def main() -> None:
         if not df_socios.empty
         else {}
     )
+    if st.session_state.num_add not in socios_ids:
+        st.session_state.num_add = None
 
     fecha_entreno = st.date_input("Data de l'entrenament", value=date.today(), format="YYYY-MM-DD")
     fecha_columna = fecha_entreno.strftime("%Y-%m-%d")
@@ -405,14 +405,10 @@ def main() -> None:
     c1, c2 = st.columns(2)
 
     def _numero_add_actual() -> int | None:
-        valor = str(st.session_state.get("num_add", "")).strip()
-        if not valor:
+        numero = st.session_state.get("num_add")
+        if numero is None:
             return None
-        try:
-            numero = int(valor)
-        except ValueError:
-            return None
-        return numero if numero > 0 else None
+        return int(numero)
 
     def _afegir_soci_actual() -> None:
         numero = _numero_add_actual()
@@ -428,8 +424,13 @@ def main() -> None:
         st.session_state.mensaje_add = ("success", f"Soci {numero} afegit a l'assistència del dia.")
 
     with c1:
-        st.text_input(
+        opciones_socios = sorted(socios_ids)
+        st.selectbox(
             "NÚM per Afegir",
+            options=opciones_socios,
+            index=None,
+            format_func=lambda numero: f"{numero} - {nombre_por_id.get(numero, '')}",
+            placeholder="Escriu el número de soci",
             key="num_add",
             on_change=_afegir_soci_actual,
         )
