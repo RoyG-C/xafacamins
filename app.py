@@ -121,6 +121,7 @@ def _query_df(query: str, params: tuple | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def columnas_socios() -> list[str]:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
@@ -135,6 +136,7 @@ def columnas_socios() -> list[str]:
     return [r[0] for r in rows]
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def columnas_fecha_socios() -> list[str]:
     return sorted([c for c in columnas_socios() if c not in BASE_SOCIOS_COLS and _es_columna_fecha(c)])
 
@@ -147,10 +149,11 @@ def asegurar_columna_fecha(fecha: str) -> bool:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(f"ALTER TABLE public.socios ADD COLUMN {_quote_ident(fecha)} TEXT")
 
+    invalidar_cache_datos()
     return True
 
 
-def inicializar_db() -> None:
+def _inicializar_db_impl() -> None:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -167,6 +170,12 @@ def inicializar_db() -> None:
         cargar_excel_inicial_en_db(EXCEL_SEED_PATH)
 
     migrar_asistencias_antiguas()
+
+
+@st.cache_resource(show_spinner=False)
+def inicializar_db() -> bool:
+    _inicializar_db_impl()
+    return True
 
 
 def migrar_asistencias_antiguas() -> None:
@@ -195,6 +204,8 @@ def migrar_asistencias_antiguas() -> None:
             )
 
         cur.execute("DROP TABLE IF EXISTS public.asistencias")
+
+    invalidar_cache_datos()
 
 
 def cargar_excel_inicial_en_db(path: Path) -> None:
@@ -245,12 +256,16 @@ def cargar_excel_inicial_en_db(path: Path) -> None:
                         (estado, num),
                     )
 
+    invalidar_cache_datos()
 
+
+@st.cache_data(ttl=300, show_spinner=False)
 def cargar_socios_base() -> pd.DataFrame:
     df = _query_df("SELECT num AS \"NÚM\", nom_cognoms AS \"NOM I COGNOMS\" FROM public.socios ORDER BY num")
     return df
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def proximo_num_socio() -> int:
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT COALESCE(MAX(num), 0) + 1 FROM public.socios")
@@ -275,6 +290,7 @@ def crear_socio(nom_cognoms: str) -> int:
             (nuevo_num, nombre),
         )
 
+    invalidar_cache_datos()
     return nuevo_num
 
 
@@ -298,6 +314,7 @@ def guardar_asistencia_db(presentes: set[int], quitar_presentes: set[int], fecha
                 [(num,) for num in quitar_presentes],
             )
 
+    invalidar_cache_datos()
     return sobrescribe
 
 
@@ -324,7 +341,12 @@ def limpiar_historico_asistencias() -> int:
         for fecha in fechas:
             cur.execute(f"ALTER TABLE public.socios DROP COLUMN IF EXISTS {_quote_ident(fecha)}")
 
+    invalidar_cache_datos()
     return len(fechas)
+
+
+def invalidar_cache_datos() -> None:
+    st.cache_data.clear()
 
 
 def dataframe_a_excel_bytes(df: pd.DataFrame) -> bytes:
@@ -337,13 +359,15 @@ def dataframe_a_excel_bytes(df: pd.DataFrame) -> bytes:
 
 def main() -> None:
     st.set_page_config(page_title="Control d'Asistència - Xafacamins", layout="wide")
-    st.title("Control d'Asistència - Xafacamins")
+    st.title("Control d'Assistència - Xafacamins")
     st.caption("Base de dades PostgreSQL remota (Supabase/Neon), consultable des de DBeaver")
 
     if "presentes" not in st.session_state:
         st.session_state.presentes = set()
     if "quitar_presentes" not in st.session_state:
         st.session_state.quitar_presentes = set()
+    if "excel_export" not in st.session_state:
+        st.session_state.excel_export = None
 
     try:
         inicializar_db()
@@ -387,7 +411,7 @@ def main() -> None:
 
         if numero_add in socios_ids:
             st.info(f"**{numero_add} - {nom_add}**")
-            confirmar_add = st.button("Afegir a pendents", key="btn_confirm_add")
+            confirmar_add = st.button("Afegir a assistència del dia", key="btn_confirm_add")
             if confirmar_add:
                 st.session_state.presentes.add(numero_add)
                 st.session_state.quitar_presentes.discard(numero_add)
@@ -420,9 +444,9 @@ def main() -> None:
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.subheader("Pendents d'afegir")
+        st.subheader("Assistència del dia")
         add_ordenados = sorted(st.session_state.presentes)
-        st.metric("Total afegir", len(add_ordenados))
+        st.metric("Total assistència", len(add_ordenados))
         if add_ordenados:
             h1, h2, h3 = st.columns([1, 3, 1])
             h1.markdown("**NÚM**")
@@ -435,7 +459,7 @@ def main() -> None:
                 cnom.write(nombre_por_id.get(numero, ""))
                 if cbtn.button("Eliminar", key=f"btn_del_add_{numero}"):
                     st.session_state.presentes.discard(numero)
-                    st.success(f"Soci {numero} eliminat de pendents d'afegir.")
+                    st.success(f"Soci {numero} eliminat de l'assistència del dia.")
                     st.rerun()
 
     with col_b:
@@ -481,23 +505,36 @@ def main() -> None:
 
                     st.session_state.presentes = set()
                     st.session_state.quitar_presentes = set()
+                    st.session_state.excel_export = None
                     st.rerun()
                 except Exception as e:
                     st.error(f"No s'ha pogut desar l'assistència: {e}")
 
     with cexport:
-        try:
-            df_export = construir_excel_asistencia_dia(fecha_columna)
-            excel_bytes = dataframe_a_excel_bytes(df_export)
+        if st.button("Preparar Excel d'assistència", use_container_width=True):
+            try:
+                df_export = construir_excel_asistencia_dia(fecha_columna)
+                excel_bytes = dataframe_a_excel_bytes(df_export)
+                st.session_state.excel_export = {
+                    "fecha": fecha_columna,
+                    "bytes": excel_bytes,
+                    "file_name": f"assistencia_{fecha_columna}.xlsx",
+                }
+            except Exception as e:
+                st.session_state.excel_export = None
+                st.error(f"No s'ha pogut preparar l'Excel d'exportació: {e}")
+
+        export_actual = st.session_state.excel_export
+        if export_actual and export_actual["fecha"] == fecha_columna:
             st.download_button(
                 "Descarregar assistència del dia (Excel)",
-                data=excel_bytes,
-                file_name=f"assistencia_{fecha_columna}.xlsx",
+                data=export_actual["bytes"],
+                file_name=export_actual["file_name"],
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
-        except Exception as e:
-            st.error(f"No s'ha pogut preparar l'Excel d'exportació: {e}")
+        elif export_actual:
+            st.info("Prepara l'Excel per a la data seleccionada abans de descarregar-lo.")
 
     st.divider()
     st.subheader("Alta de nou soci")
@@ -515,6 +552,7 @@ def main() -> None:
         try:
             nuevo_num = crear_socio(nom_nou)
             st.success(f"Soci donat d'alta amb el número {nuevo_num}.")
+            st.session_state.excel_export = None
             st.rerun()
         except Exception as e:
             st.error(f"No s'ha pogut donar d'alta el soci: {e}")
@@ -531,6 +569,7 @@ def main() -> None:
                 total = limpiar_historico_asistencias()
                 st.session_state.presentes = set()
                 st.session_state.quitar_presentes = set()
+                st.session_state.excel_export = None
                 if total == 0:
                     st.info("No hi havia cap columna d'històric per eliminar.")
                 else:
